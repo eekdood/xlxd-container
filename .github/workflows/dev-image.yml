@@ -1,4 +1,4 @@
-name: Smoke Test Dev Image
+name: Build and Publish Dev Image
 
 on:
   push:
@@ -6,17 +6,35 @@ on:
       - dev
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
-  smoke-test:
+  dev-image:
     runs-on: ubuntu-latest
+
+    env:
+      IMAGE_NAME: ghcr.io/eekdood/xlxd-container
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Set image tags
+        run: |
+          echo "IMAGE_TAG_DEV=${IMAGE_NAME}:dev" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG_SHA=${IMAGE_NAME}:dev-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
       - name: Build image
         run: |
-          docker build -t xlxd-container:test .
+          docker build \
+            -t "${IMAGE_TAG_DEV}" \
+            -t "${IMAGE_TAG_SHA}" \
+            .
 
       - name: Prepare runtime directories
         run: |
@@ -43,7 +61,7 @@ jobs:
             -v "${PWD}/xlxd/config:/xlxd-config" \
             -v "${PWD}/xlxd/data:/xlxd-data" \
             -p 8080:8080 \
-            xlxd-container:test
+            "${IMAGE_TAG_DEV}"
 
       - name: Wait for health
         run: |
@@ -61,6 +79,11 @@ jobs:
         run: |
           curl -fsS http://127.0.0.1:8080/ > /tmp/dashboard.html
           grep -Eq 'XLX|Multiprotocol|Dashboard' /tmp/dashboard.html
+
+      - name: Push dev images
+        run: |
+          docker push "${IMAGE_TAG_DEV}"
+          docker push "${IMAGE_TAG_SHA}"
 
       - name: Show container logs on failure
         if: failure()
