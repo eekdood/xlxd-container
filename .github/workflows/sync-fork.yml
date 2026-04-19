@@ -1,0 +1,34 @@
+name: Sync XLXd Fork
+
+on:
+  workflow_dispatch:
+    schedule:
+      - cron: "11 */6 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  sync-fork:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout packaging repo
+        uses: actions/checkout@v4
+
+      - name: Checkout source fork
+        uses: actions/checkout@v4
+        with:
+          repository: eekdood/xlxd
+          path: xlxd-fork
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add upstream and sync fork
+        run: |
+          cd xlxd-fork
+          git remote add upstream https://github.com/LX3JL/xlxd.git
+          git fetch upstream
+          git checkout master
+          git reset --hard upstream/master
+          git push origin master --force
