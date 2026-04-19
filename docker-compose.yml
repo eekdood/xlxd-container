@@ -6,7 +6,7 @@ services:
     network_mode: host
 
     environment:
-      DASHBOARD: dashboard2
+      DASHBOARD: dashboard1
       XLXNUM: XLX999
       XLXD_BIND: 0.0.0.0
       XLXD_AMBE_IP: 127.0.0.1
@@ -23,5 +23,5 @@ services:
       TZ: America/New_York
 
     volumes:
-      - ./runtime/config:/xlxd-config
-      - ./runtime/data:/xlxd-data
+      - ./xlxd/config:/xlxd-config
+      - ./xlxd/data:/xlxd-data
