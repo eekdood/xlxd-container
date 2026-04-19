@@ -1,6 +1,6 @@
 services:
   xlxd:
-    image: xlxd:latest
+    image: ghcr.io/eekdood/xlxd-container:latest
     container_name: xlxd
     restart: unless-stopped
     network_mode: host

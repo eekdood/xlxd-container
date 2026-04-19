@@ -4,23 +4,43 @@ Run XLXd in Docker with either `dashboard1` or `dashboard2`, plus simple runtime
 
 ## Quick Start
 
-1. Edit `docker-compose.yml`
-2. Start the container:
+1. Pull the image:
+
+```bash
+docker pull ghcr.io/eekdood/xlxd-container:latest
+```
+
+2. Edit `docker-compose.yml`
+3. Start the container:
 
 ```bash
 docker compose up -d
 ```
 
-3. After first start, edit the files in:
+4. After first start, edit the files in:
 
 ```text
 xlxd/config
 ```
 
-4. Restart if needed:
+5. Restart if needed:
 
 ```bash
 docker compose restart
+```
+
+## Image Tags
+
+Stable image:
+
+```text
+ghcr.io/eekdood/xlxd-container:latest
+```
+
+Pre-release test image:
+
+```text
+ghcr.io/eekdood/xlxd-container:dev
 ```
 
 ## Main Settings
