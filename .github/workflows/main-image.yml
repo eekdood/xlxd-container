@@ -1,0 +1,94 @@
+name: Build and Publish Main Image
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  main-image:
+    runs-on: ubuntu-latest
+
+    env:
+      IMAGE_NAME: ghcr.io/eekdood/xlxd-container
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set image tags
+        run: |
+          echo "IMAGE_TAG_LATEST=${IMAGE_NAME}:latest" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG_SHA=${IMAGE_NAME}:sha-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build image
+        run: |
+          docker build \
+            -t "${IMAGE_TAG_LATEST}" \
+            -t "${IMAGE_TAG_SHA}" \
+            .
+
+      - name: Prepare runtime directories
+        run: |
+          mkdir -p xlxd/config xlxd/data
+
+      - name: Start container
+        run: |
+          docker run -d \
+            --name xlxd-smoke \
+            -e DASHBOARD=dashboard2 \
+            -e XLXNUM=XLX999 \
+            -e XLXD_BIND=0.0.0.0 \
+            -e XLXD_AMBE_IP=127.0.0.1 \
+            -e APACHE_PORT=8080 \
+            -e CALLHOME=0 \
+            -e EMAIL=test@example.com \
+            -e URL=http://localhost:8080 \
+            -e COUNTRY=your_country \
+            -e DESCRIPTION=your_comment \
+            -e MODULEA=Int. \
+            -e MODULEB=Regional \
+            -e MODULEC=National \
+            -e MODULED= \
+            -v "${PWD}/xlxd/config:/xlxd-config" \
+            -v "${PWD}/xlxd/data:/xlxd-data" \
+            -p 8080:8080 \
+            "${IMAGE_TAG_LATEST}"
+
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 60); do
+            status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' xlxd-smoke)"
+            if [ "$status" = "healthy" ]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs xlxd-smoke
+          exit 1
+
+      - name: Verify dashboard response
+        run: |
+          curl -fsS http://127.0.0.1:8080/ > /tmp/dashboard.html
+          grep -Eq 'XLX|Multiprotocol|Dashboard' /tmp/dashboard.html
+
+      - name: Push main images
+        run: |
+          docker push "${IMAGE_TAG_LATEST}"
+          docker push "${IMAGE_TAG_SHA}"
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs xlxd-smoke
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f xlxd-smoke || true

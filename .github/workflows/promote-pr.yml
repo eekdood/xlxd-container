@@ -1,0 +1,91 @@
+name: Open Promotion PR
+
+on:
+  workflow_run:
+    workflows:
+      - Build and Publish Dev Image
+    types:
+      - completed
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  promote-pr:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'dev'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout dev branch
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Prepare PR metadata
+        run: |
+          SHORT_SHA="${{ github.event.workflow_run.head_sha }}"
+          SHORT_SHA="${SHORT_SHA::7}"
+          if [ -f UPSTREAM_XLXD_COMMIT ]; then
+            UPSTREAM_COMMIT="$(cat UPSTREAM_XLXD_COMMIT)"
+          else
+            UPSTREAM_COMMIT="unknown"
+          fi
+
+          {
+            echo "PR_TITLE=Promote dev to main"
+            echo "PR_BODY<<EOF"
+            echo "Automated promotion PR for the latest successful \`dev\` image pipeline."
+            echo
+            echo "## Dev Image"
+            echo
+            echo "- \`ghcr.io/eekdood/xlxd-container:dev\`"
+            echo "- \`ghcr.io/eekdood/xlxd-container:dev-${SHORT_SHA}\`"
+            echo
+            echo "## Imported Source"
+            echo
+            echo "- Upstream commit: \`${UPSTREAM_COMMIT}\`"
+            echo
+            echo "## Suggested Check"
+            echo
+            echo "- [ ] Pulled and tested the current \`dev\` image"
+            echo "- [ ] Confirmed the dashboard/config behavior looks correct"
+            echo "- [ ] Ready to promote \`dev\` to \`main\`"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Create or update promotion PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING_PR="$(gh pr list \
+            --base main \
+            --head dev \
+            --state open \
+            --json number \
+            --jq '.[0].number')"
+
+          if [ -n "$EXISTING_PR" ]; then
+            gh pr edit "$EXISTING_PR" \
+              --title "$PR_TITLE" \
+              --body "$PR_BODY" \
+              --add-assignee eekdood
+            gh pr edit "$EXISTING_PR" --add-label automated --add-label ready-for-test || true
+          else
+            gh pr create \
+              --base main \
+              --head dev \
+              --title "$PR_TITLE" \
+              --body "$PR_BODY" \
+              --assignee eekdood
+            NEW_PR="$(gh pr list \
+              --base main \
+              --head dev \
+              --state open \
+              --json number \
+              --jq '.[0].number')"
+            gh pr edit "$NEW_PR" --add-label automated --add-label ready-for-test || true
+          fi
