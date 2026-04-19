@@ -1,0 +1,45 @@
+name: Import XLXd Into Container Repo
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "29 */6 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout packaging repo
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Checkout source fork
+        uses: actions/checkout@v4
+        with:
+          repository: eekdood/xlxd
+          path: xlxd-source
+          fetch-depth: 0
+
+      - name: Import upstream content
+        run: |
+          SOURCE_COMMIT="$(git -C xlxd-source rev-parse HEAD)"
+          ./tooling/import-upstream.sh xlxd-source "${SOURCE_COMMIT}"
+
+      - name: Commit import if changed
+        run: |
+          SOURCE_COMMIT="$(cat UPSTREAM_XLXD_COMMIT)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src config dashboard1 dashboard2 scripts license.txt UPSTREAM_XLXD_COMMIT
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Import xlxd upstream @ ${SOURCE_COMMIT}"
+          git push origin dev
