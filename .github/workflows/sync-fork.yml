@@ -22,7 +22,7 @@ jobs:
           repository: eekdood/xlxd
           path: xlxd-fork
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.XLXD_FORK_PUSH_TOKEN }}
 
       - name: Add upstream and sync fork
         run: |
