@@ -1,0 +1,27 @@
+services:
+  xlxd:
+    image: xlxd:latest
+    container_name: xlxd
+    restart: unless-stopped
+    network_mode: host
+
+    environment:
+      DASHBOARD: dashboard2
+      XLXNUM: XLX999
+      XLXD_BIND: 0.0.0.0
+      XLXD_AMBE_IP: 127.0.0.1
+      APACHE_PORT: 80
+      CALLHOME: "0"
+      EMAIL: admin@example.com
+      URL: https://xlx.example.com
+      COUNTRY: your_country
+      DESCRIPTION: your_comment
+      MODULEA: Int.
+      MODULEB: Regional
+      MODULEC: National
+      MODULED: ""
+      TZ: America/New_York
+
+    volumes:
+      - ./runtime/config:/xlxd-config
+      - ./runtime/data:/xlxd-data

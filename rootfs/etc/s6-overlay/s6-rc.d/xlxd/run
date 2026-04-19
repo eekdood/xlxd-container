@@ -1,0 +1,266 @@
+#!/command/with-contenv bash
+set -e
+
+echo "s6: starting xlxd service"
+
+mkdir -p /var/log
+mkdir -p /xlxd-config
+mkdir -p /xlxd-data
+
+seed_and_apply_config() {
+  local f="$1"
+
+  if [ ! -f "/xlxd-config/$f" ] && [ -f "/xlxd/$f" ]; then
+    echo "s6: seeding default config $f"
+    cp "/xlxd/$f" "/xlxd-config/$f"
+  fi
+
+  if [ -f "/xlxd-config/$f" ]; then
+    echo "s6: applying config $f"
+    cp "/xlxd-config/$f" "/xlxd/$f"
+  fi
+}
+
+seed_and_apply_dashboard_config() {
+  local dashboard
+  local runtime
+  local defaults
+  local target
+
+  dashboard="$(selected_dashboard)"
+  if [ -z "$dashboard" ]; then
+    echo "s6: no dashboard config selected"
+    return
+  fi
+
+  runtime="/xlxd-config/${dashboard}.ini"
+  defaults="/var/www/${dashboard}/pgs/config.inc.php"
+  target="/var/www/config.inc.php"
+
+  if [ ! -f "$runtime" ] && [ -f "$defaults" ]; then
+    echo "s6: seeding default dashboard config"
+    seed_dashboard_ini "$dashboard" "$defaults" "$runtime"
+  fi
+
+  if [ -f "$runtime" ]; then
+    echo "s6: rendering dashboard config"
+    render_dashboard_config "$dashboard" "$runtime" "$target"
+  fi
+}
+
+selected_dashboard() {
+  case "${DASHBOARD:-}" in
+    dashboard1|dashboard2) printf '%s' "${DASHBOARD}" ;;
+    *) printf '' ;;
+  esac
+}
+
+normalize_bool() {
+  local value
+  value="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+
+  case "$value" in
+    1|true|yes) printf 'true' ;;
+    0|false|no) printf 'false' ;;
+    *) return 1 ;;
+  esac
+}
+
+seed_dashboard_ini() {
+  local dashboard="$1"
+  local source="$2"
+  local target="$3"
+
+  php -r '
+$code = file_get_contents($argv[1]);
+if ($code === false) {
+    fwrite(STDERR, "Failed to read upstream dashboard config\n");
+    exit(1);
+}
+
+$code = preg_replace(
+    "/if\\s*\\(file_exists\\(\"\\.\\.\\/config\\.inc\\.php\"\\)\\)\\s*\\{\\s*include\\s*\\(\"\\.\\.\\/config\\.inc\\.php\"\\);\\s*\\}\\s*\\?>?\\s*$/s",
+    "",
+    $code
+);
+
+if ($code === null) {
+    fwrite(STDERR, "Failed to sanitize upstream dashboard config\n");
+    exit(1);
+}
+
+eval("?>" . $code);
+
+$config = [
+    "contact_email" => $PageOptions["ContactEmail"],
+    "page_refresh_delay" => $PageOptions["PageRefreshDelay"],
+    "repeaters_ip_mode" => $PageOptions["RepeatersPage"]["IPModus"],
+    "peers_ip_mode" => $PageOptions["PeerPage"]["IPModus"],
+    "module_a" => $PageOptions["ModuleNames"]["A"],
+    "module_b" => $PageOptions["ModuleNames"]["B"],
+    "module_c" => $PageOptions["ModuleNames"]["C"],
+    "module_d" => $PageOptions["ModuleNames"]["D"],
+    "meta_description" => $PageOptions["MetaDescription"],
+    "meta_keywords" => $PageOptions["MetaKeywords"],
+    "meta_author" => $PageOptions["MetaAuthor"],
+    "dashboard_url" => $CallingHome["MyDashBoardURL"],
+    "country" => $CallingHome["Country"],
+    "comment" => $CallingHome["Comment"],
+];
+
+$dashboard = $argv[3];
+if ($dashboard === "dashboard1") {
+    $config["number_of_modules"] = $PageOptions["NumberOfModules"];
+    $config["traffic_show"] = !empty($PageOptions["Traffic"]["Show"]) ? "true" : "false";
+    $config["custom_text"] = $PageOptions["CustomTXT"];
+}
+
+$out = [
+    "; XLXD dashboard override settings",
+    "; Seeded from upstream " . $dashboard . "/pgs/config.inc.php",
+    "",
+];
+
+foreach ($config as $key => $value) {
+    $escaped = str_replace("\"", "\\\"", (string)$value);
+    $out[] = sprintf("%s = \"%s\"", $key, $escaped);
+}
+
+$out[] = "";
+file_put_contents($argv[2], implode(PHP_EOL, $out));
+' "$source" "$target" "$dashboard"
+}
+
+render_dashboard_config() {
+  local dashboard="$1"
+  local source="$2"
+  local target="$3"
+  local callhome_value=''
+
+  if [ -n "${CALLHOME:-}" ]; then
+    if ! callhome_value="$(normalize_bool "${CALLHOME}")"; then
+      echo "s6: invalid CALLHOME value: ${CALLHOME}"
+      exit 1
+    fi
+  fi
+
+  php -r '
+$settings = parse_ini_file($argv[1], false, INI_SCANNER_RAW);
+if ($settings === false) {
+    fwrite(STDERR, "Failed to parse dashboard INI config\n");
+    exit(1);
+}
+
+$dashboard = $argv[3];
+$lines = ["<?php"];
+
+$map = [
+    "contact_email" => "\$PageOptions['\''ContactEmail'\'']",
+    "page_refresh_delay" => "\$PageOptions['\''PageRefreshDelay'\'']",
+    "repeaters_ip_mode" => "\$PageOptions['\''RepeatersPage'\'']['\''IPModus'\'']",
+    "peers_ip_mode" => "\$PageOptions['\''PeerPage'\'']['\''IPModus'\'']",
+    "module_a" => "\$PageOptions['\''ModuleNames'\'']['\''A'\'']",
+    "module_b" => "\$PageOptions['\''ModuleNames'\'']['\''B'\'']",
+    "module_c" => "\$PageOptions['\''ModuleNames'\'']['\''C'\'']",
+    "module_d" => "\$PageOptions['\''ModuleNames'\'']['\''D'\'']",
+    "meta_description" => "\$PageOptions['\''MetaDescription'\'']",
+    "meta_keywords" => "\$PageOptions['\''MetaKeywords'\'']",
+    "meta_author" => "\$PageOptions['\''MetaAuthor'\'']",
+    "dashboard_url" => "\$CallingHome['\''MyDashBoardURL'\'']",
+    "country" => "\$CallingHome['\''Country'\'']",
+    "comment" => "\$CallingHome['\''Comment'\'']",
+];
+
+if ($dashboard === "dashboard1") {
+    $map["number_of_modules"] = "\$PageOptions['\''NumberOfModules'\'']";
+    $map["traffic_show"] = "\$PageOptions['\''Traffic'\'']['\''Show'\'']";
+    $map["custom_text"] = "\$PageOptions['\''CustomTXT'\'']";
+}
+
+foreach ([
+    "EMAIL" => "contact_email",
+    "URL" => "dashboard_url",
+    "COUNTRY" => "country",
+    "DESCRIPTION" => "comment",
+    "MODULEA" => "module_a",
+    "MODULEB" => "module_b",
+    "MODULEC" => "module_c",
+    "MODULED" => "module_d",
+] as $envName => $settingKey) {
+    $envValue = getenv($envName);
+    if ($envValue !== false) {
+        $settings[$settingKey] = $envValue;
+    }
+}
+
+foreach ($map as $key => $targetExpr) {
+    if (array_key_exists($key, $settings)) {
+        if ($dashboard === "dashboard1" && $key === "number_of_modules") {
+            $value = (string)(int)$settings[$key];
+        } elseif ($dashboard === "dashboard1" && $key === "traffic_show") {
+            $raw = strtolower((string)$settings[$key]);
+            $value = in_array($raw, ["1", "true", "yes"], true) ? "true" : "false";
+        } else {
+            $value = var_export((string)$settings[$key], true);
+        }
+        $lines[] = $targetExpr . " = " . $value . ";";
+    }
+}
+
+if ($argc > 4 && $argv[4] !== "") {
+    $lines[] = "\$CallingHome['\''Active'\''] = " . $argv[4] . ";";
+}
+file_put_contents($argv[2], implode(PHP_EOL, $lines) . PHP_EOL);
+' "$source" "$target" "$dashboard" "$callhome_value"
+}
+
+restore_data_file() {
+  local f="$1"
+
+  if [ -f "/xlxd-data/$f" ]; then
+    echo "s6: restoring data file $f"
+    cp "/xlxd-data/$f" "/xlxd/$f"
+  fi
+}
+
+seed_and_apply_config "xlxd.interlink"
+seed_and_apply_config "xlxd.terminal"
+seed_and_apply_config "xlxd.blacklist"
+seed_and_apply_config "xlxd.whitelist"
+seed_and_apply_dashboard_config
+
+restore_data_file "callinghome.php"
+restore_data_file "lastcallhome.php"
+
+if ! pgrep -x xlxd >/dev/null 2>&1; then
+  /xlxd/xlxd \
+    "${XLXNUM:-XLX999}" \
+    "${XLXD_BIND:-0.0.0.0}" \
+    "${XLXD_AMBE_IP:-127.0.0.1}" &
+
+  xlxd_pid=$!
+  printf '%s\n' "$xlxd_pid" > /var/log/xlxd.pid
+  chmod 644 /var/log/xlxd.pid
+fi
+
+sleep 2
+
+if ! pgrep -x xlxd >/dev/null 2>&1; then
+  echo "s6: xlxd failed to start"
+  exit 1
+fi
+
+echo "s6: xlxd is running"
+
+while pgrep -x xlxd >/dev/null 2>&1; do
+  # Persist selected runtime files if they appear or change
+  for f in callinghome.php lastcallhome.php; do
+    if [ -f "/xlxd/$f" ]; then
+      cp "/xlxd/$f" "/xlxd-data/$f"
+    fi
+  done
+  sleep 30
+done
+
+echo "s6: xlxd stopped"
+exit 1

@@ -1,0 +1,83 @@
+#!/command/with-contenv bash
+set -e
+
+echo "s6: starting apache2"
+
+APACHE_PORT="${APACHE_PORT:-80}"
+DASHBOARD_TARGET="/var/www/empty"
+XLXD_XML_PATH="/var/log/xlxd.xml"
+XLXD_XML_WAIT_SECONDS="${XLXD_XML_WAIT_SECONDS:-30}"
+
+case "$APACHE_PORT" in
+  ''|*[!0-9]*)
+    echo "s6: invalid APACHE_PORT: $APACHE_PORT"
+    exit 1
+    ;;
+esac
+
+if [ "$APACHE_PORT" -lt 1 ] || [ "$APACHE_PORT" -gt 65535 ]; then
+  echo "s6: APACHE_PORT out of range: $APACHE_PORT"
+  exit 1
+fi
+
+case "$XLXD_XML_WAIT_SECONDS" in
+  ''|*[!0-9]*)
+    echo "s6: invalid XLXD_XML_WAIT_SECONDS: $XLXD_XML_WAIT_SECONDS"
+    exit 1
+    ;;
+esac
+
+case "${DASHBOARD:-}" in
+  dashboard1|dashboard2)
+    DASHBOARD_TARGET="/var/www/${DASHBOARD}"
+    ;;
+  "")
+    echo "s6: no dashboard selected"
+    ;;
+  *)
+    echo "s6: invalid DASHBOARD '${DASHBOARD}', no dashboard will be installed"
+    ;;
+esac
+
+mkdir -p /var/run/apache2
+mkdir -p /var/log/apache2
+mkdir -p /var/www/empty
+chown -R www-data:www-data /var/run/apache2 /var/log/apache2 /var/www/dashboard1/log /var/www/dashboard2/log
+
+if [ -n "${DASHBOARD:-}" ]; then
+  waited=0
+  while [ ! -r "$XLXD_XML_PATH" ] && [ "$waited" -lt "$XLXD_XML_WAIT_SECONDS" ]; do
+    if [ "$waited" -eq 0 ]; then
+      echo "s6: waiting for xlxd XML at $XLXD_XML_PATH"
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+
+  if [ -r "$XLXD_XML_PATH" ]; then
+    echo "s6: xlxd XML is ready"
+  else
+    echo "s6: xlxd XML not ready after ${XLXD_XML_WAIT_SECONDS}s, starting apache2 anyway"
+  fi
+fi
+
+cat > /etc/apache2/ports.conf <<EOF
+Listen ${APACHE_PORT}
+
+<IfModule ssl_module>
+    Listen 443
+</IfModule>
+
+<IfModule mod_gnutls.c>
+    Listen 443
+</IfModule>
+EOF
+
+sed "s/__APACHE_PORT__/${APACHE_PORT}/g" \
+  /etc/apache2/sites-available/dashboard.conf.template \
+  > /etc/apache2/sites-available/dashboard.conf
+
+ln -sfn "${DASHBOARD_TARGET}" /var/www/dashboard
+ln -sf /etc/apache2/sites-available/dashboard.conf /etc/apache2/sites-enabled/dashboard.conf
+
+exec /usr/sbin/apache2ctl -D FOREGROUND
