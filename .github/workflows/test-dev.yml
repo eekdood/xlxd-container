@@ -1,0 +1,71 @@
+name: Smoke Test Dev Image
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: |
+          docker build -t xlxd-container:test .
+
+      - name: Prepare runtime directories
+        run: |
+          mkdir -p xlxd/config xlxd/data
+
+      - name: Start container
+        run: |
+          docker run -d \
+            --name xlxd-smoke \
+            -e DASHBOARD=dashboard2 \
+            -e XLXNUM=XLX999 \
+            -e XLXD_BIND=0.0.0.0 \
+            -e XLXD_AMBE_IP=127.0.0.1 \
+            -e APACHE_PORT=8080 \
+            -e CALLHOME=0 \
+            -e EMAIL=test@example.com \
+            -e URL=http://localhost:8080 \
+            -e COUNTRY=your_country \
+            -e DESCRIPTION=your_comment \
+            -e MODULEA=Int. \
+            -e MODULEB=Regional \
+            -e MODULEC=National \
+            -e MODULED= \
+            -v "${PWD}/xlxd/config:/xlxd-config" \
+            -v "${PWD}/xlxd/data:/xlxd-data" \
+            -p 8080:8080 \
+            xlxd-container:test
+
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 60); do
+            status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' xlxd-smoke)"
+            if [ "$status" = "healthy" ]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs xlxd-smoke
+          exit 1
+
+      - name: Verify dashboard response
+        run: |
+          curl -fsS http://127.0.0.1:8080/ > /tmp/dashboard.html
+          grep -Eq 'XLX|Multiprotocol|Dashboard' /tmp/dashboard.html
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs xlxd-smoke
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f xlxd-smoke || true
