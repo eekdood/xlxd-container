@@ -14,13 +14,13 @@ jobs:
 
     steps:
       - name: Checkout packaging repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: dev
           fetch-depth: 0
 
       - name: Checkout source fork
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: eekdood/xlxd
           path: xlxd-source
