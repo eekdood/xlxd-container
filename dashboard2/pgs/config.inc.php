@@ -16,7 +16,7 @@ $PageOptions = array();
 
 $PageOptions['ContactEmail']                         = 'your_email';		    // Support E-Mail address
 
-$PageOptions['DashboardVersion']                     = '2.3.10';       			// Dashboard Version
+$PageOptions['DashboardVersion']                     = '2.3.11';       			// Dashboard Version
 
 $PageOptions['PageRefreshActive']                    = true;          			// Activate automatic refresh
 $PageOptions['PageRefreshDelay']                     = '10000';       			// Page refresh time in miliseconds
@@ -66,6 +66,40 @@ $CallingHome['Comment']                              = "your_comment"; 				     
 $CallingHome['HashFile']                             = "/tmp/callinghome.php";                 // Make sure the apache user has read and write permissions in this folder.
 $CallingHome['OverrideIPAddress']                    = "";                                     // Insert your IP address here. Leave blank for autodetection. No need to enter a fake address.
 $CallingHome['InterlinkFile']                        = "/xlxd/xlxd.interlink";                 // Path to interlink file
+
+
+// -------------------------------------------------------------------------
+// Co-located peer reflector pages (YSF, NXDN, P25)
+//
+// Each block controls one co-located reflector whose connected gateways are
+// shown by reading that reflector's systemd journal via journalctl.
+//
+// LOCAL ONLY: a page only appears when xlxd.interlink has a peer of that type
+// at 127.0.0.1 (or localhost), e.g. "YSF12345 127.0.0.1:42000 B". The users of
+// a remote peer can't be seen from here, so Show = true alone is not enough.
+//
+// Show         — set true to enable the nav item and page (default: false)
+// ServiceUnit  — exact systemd unit name passed to journalctl -u
+// PageTitle    — label shown in the sidebar nav and as the page heading
+//
+// IP display and masquerade character are inherited from RepeatersPage above;
+// there are no separate per-page IP settings for these pages.
+// -------------------------------------------------------------------------
+
+$PageOptions['YSFPeerPage'] = array();
+$PageOptions['YSFPeerPage']['Show']        = false;                    // Enable/disable the YSF Peers page
+$PageOptions['YSFPeerPage']['ServiceUnit'] = 'YSFReflector.service';  // systemd unit name to query via journalctl
+$PageOptions['YSFPeerPage']['PageTitle']   = 'YSF Peers';
+
+$PageOptions['NXDNPeerPage'] = array();
+$PageOptions['NXDNPeerPage']['Show']        = false;                    // Enable/disable the NXDN Peers page
+$PageOptions['NXDNPeerPage']['ServiceUnit'] = 'NXDNReflector.service'; // systemd unit name to query via journalctl
+$PageOptions['NXDNPeerPage']['PageTitle']   = 'NXDN Peers';
+
+$PageOptions['P25PeerPage'] = array();
+$PageOptions['P25PeerPage']['Show']        = false;                    // Enable/disable the P25 Peers page
+$PageOptions['P25PeerPage']['ServiceUnit'] = 'P25Reflector.service';  // systemd unit name to query via journalctl
+$PageOptions['P25PeerPage']['PageTitle']   = 'P25 Peers';
 
 
 /*
